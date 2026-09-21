@@ -117,3 +117,4 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 });
+import { Analytics } from "@vercel/analytics/next"
