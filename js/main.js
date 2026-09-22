@@ -2,6 +2,30 @@
 
 document.addEventListener('DOMContentLoaded', function () {
 
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Hero entrance animation
+  if (!reduceMotion) {
+    document.querySelectorAll('.hero .eyebrow, .hero h1, .hero .hero-sub, .hero .hero-actions, .hero .proof').forEach(function (el) {
+      el.classList.add('reveal-up');
+    });
+  }
+
+  // Scroll reveal for section heads, service rows, portfolio cards, process steps
+  var revealTargets = document.querySelectorAll('.section-head, .service-row, .portfolio-card, .process-step');
+  if (!reduceMotion && 'IntersectionObserver' in window) {
+    revealTargets.forEach(function (el) { el.classList.add('will-reveal'); });
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    revealTargets.forEach(function (el) { observer.observe(el); });
+  }
+
   // Mobile nav toggle
   var toggle = document.querySelector('.menu-toggle');
   var nav = document.querySelector('.primary-nav');
@@ -37,10 +61,11 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  // Contact form validation (client-side; no backend wired up yet)
+  // Contact form: client-side validation + Formspree AJAX submit
   var form = document.querySelector('#contact-form');
   if (form) {
     var status = form.querySelector('.form-status');
+    var submitBtn = form.querySelector('button[type="submit"]');
 
     function setError(field, message) {
       var wrap = field.closest('.field');
@@ -48,50 +73,96 @@ document.addEventListener('DOMContentLoaded', function () {
       wrap.classList.add('has-error');
       var err = wrap.querySelector('.field-error');
       if (err) err.textContent = message;
+      field.setAttribute('aria-invalid', 'true');
     }
     function clearError(field) {
       var wrap = field.closest('.field');
       if (!wrap) return;
       wrap.classList.remove('has-error');
+      field.removeAttribute('aria-invalid');
     }
+    function showStatus(message, type) {
+      if (!status) return;
+      status.textContent = message;
+      status.className = 'form-status visible ' + type;
+    }
+    function clearStatus() {
+      if (!status) return;
+      status.textContent = '';
+      status.className = 'form-status';
+    }
+
+    var nameField = form.querySelector('#name');
+    var emailField = form.querySelector('#email');
+    var messageField = form.querySelector('#message');
+
+    // Clear errors as the user fixes each field
+    [nameField, emailField, messageField].forEach(function (field) {
+      if (!field) return;
+      field.addEventListener('input', function () {
+        clearError(field);
+        clearStatus();
+      });
+    });
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+
       var valid = true;
-      var name = form.querySelector('#name');
-      var email = form.querySelector('#email');
-      var message = form.querySelector('#message');
+      [nameField, emailField, messageField].forEach(clearError);
 
-      [name, email, message].forEach(clearError);
-
-      if (!name.value.trim()) {
-        setError(name, 'Enter your name.');
+      if (!nameField.value.trim()) {
+        setError(nameField, 'Enter your name.');
         valid = false;
       }
       var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!email.value.trim() || !emailPattern.test(email.value.trim())) {
-        setError(email, 'Enter a valid email address.');
+      if (!emailField.value.trim() || !emailPattern.test(emailField.value.trim())) {
+        setError(emailField, 'Enter a valid email address.');
         valid = false;
       }
-      if (!message.value.trim()) {
-        setError(message, 'Tell us a bit about your project.');
+      if (!messageField.value.trim()) {
+        setError(messageField, 'Tell us a bit about your project.');
         valid = false;
       }
 
       if (!valid) {
-        if (status) {
-          status.textContent = 'Please fix the highlighted fields.';
-          status.className = 'form-status visible error';
-        }
+        showStatus('Please fix the highlighted fields.', 'error');
         return;
       }
 
-      // No backend is connected yet. Replace this block with a real submit
-      // (e.g. fetch() to an API route, or a form service) before launch.
-      if (status) {
-        status.textContent = "Thanks — this form isn't connected to an inbox yet, so nothing was sent. Email " + 'abdullahcms.dev@gmail.com' + ' directly for now.';
-        status.className = 'form-status visible error';
-      }
+      if (submitBtn) submitBtn.disabled = true;
+      showStatus('Sending…', 'success');
+
+      fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'Accept': 'application/json' }
+      })
+        .then(function (res) {
+          if (res.ok) {
+            form.reset();
+            showStatus("Thanks — your message was sent. We'll reply within a day.", 'success');
+          } else if (res.status === 429) {
+            showStatus('Too many submissions right now. Please wait a minute and try again.', 'error');
+          } else {
+            res.json().then(function (data) {
+              if (data && data.errors && data.errors.length) {
+                var firstError = data.errors[0];
+                showStatus(firstError.message || 'Something went wrong. Please try again.', 'error');
+              } else {
+                showStatus('Something went wrong. Please try again, or email abdullahcms.dev@gmail.com.', 'error');
+              }
+            }).catch(function () {
+              showStatus('Something went wrong. Please try again, or email abdullahcms.dev@gmail.com.', 'error');
+            });
+          }
+        })
+        .catch(function () {
+          showStatus('Network error — please check your connection and try again.', 'error');
+        })
+        .finally(function () {
+          if (submitBtn) submitBtn.disabled = false;
+        });
     });
   }
 
